@@ -21,12 +21,13 @@ struct EulerAngle
 class ShooterProcessor
 {
     public:
-        ShooterProcessor(double _g, vector<Point2d>& _points, double _t)
+        ShooterProcessor(double _g, vector<Point2d>& _points, vector<Point3d>& armor_points, double _t)
         {
-            armorPointsTo3D(_points, obj_point);
+            armorPointsTo3D(_points, armor_points, obj_point);
             g = _g;
             if(t0 < 1e-6)t0 = _t;
             time = _t - t0;
+            // obj_point = Point3d(0.0, 2.0, 0.5);
             if(obj_points.size() <= 10){
                 obj_points.push_back(obj_point);
                 times.push_back(time);
@@ -42,12 +43,19 @@ class ShooterProcessor
         }
         EulerAngle hit_static_armor(Point3d point);
         EulerAngle hit_armor(Point3d point);
+        void set_armor_size(vector<Point2d>& points)
+        {
+            armor_length = points[1].x - points[0].x;
+            armor_width = points[2].y - points[1].y;
+        }
 
     private:
+        double armor_width;
+        double armor_length;
         double time;
         static double t0;
         double g;
-        double v0 = 1.5;
+        double v0 = 15;
         static double R;
         static Point3d C;
         static double angular;
@@ -61,7 +69,7 @@ class ShooterProcessor
         bool get_circle();
         static Point3d get_pos_on_time(double t);
         // static double func(uint t);
-        bool armorPointsTo3D(const vector<Point2d>& pixelPoints, Point3d& center3D);
+        bool armorPointsTo3D(const vector<Point2d>& pixelPoints, vector<Point3d>& armor_points, Point3d& center3D);
         double func(double t);
         double dfunc(double t);
         double solvefunc();
@@ -77,7 +85,7 @@ vector<double> ShooterProcessor::angles;
 Mat ShooterProcessor::u2;
 Mat ShooterProcessor::u3;
 
-bool ShooterProcessor::armorPointsTo3D(const vector<Point2d>& pixelPoints, Point3d& center3D) {
+bool ShooterProcessor::armorPointsTo3D(const vector<Point2d>& pixelPoints, vector<Point3d>& armor_points, Point3d& center3D) {
     // 相机内参矩阵
     Mat cameraMatrix = (Mat_<double>(3, 3) << 
         554.383, 0, 320,
@@ -89,20 +97,32 @@ bool ShooterProcessor::armorPointsTo3D(const vector<Point2d>& pixelPoints, Point
 
     // 装甲板在世界坐标系中的3D角点坐标（以装甲板中心为原点）
     // 装甲板尺寸：长0.705m，宽0.230m
-    vector<Point3d> objectPoints;
-    double half_length = 0.705 / 2.0;  // 长边的一半
-    double half_width = 0.230 / 2.0;   // 短边的一半
+    // vector<Point3d> objectPoints;
+    // double half_length = armor_length / 2.0;  // 长边的一半
+    // double half_width = armor_width / 2.0;   // 短边的一半
     
-    // 按照左下起始逆时针顺序定义角点
-    // 注意：这里假设装甲板在XY平面上，Z=0
-    objectPoints.push_back(Point3d(-half_length, -half_width, 0));  // 左下
-    objectPoints.push_back(Point3d(half_length, -half_width, 0));   // 右下  
-    objectPoints.push_back(Point3d(half_length, half_width, 0));    // 右上
-    objectPoints.push_back(Point3d(-half_length, half_width, 0));   // 左上
+    // // 按照左下起始逆时针顺序定义角点
+    // // 注意：这里假设装甲板在XY平面上，Z=0
+    // objectPoints.push_back(Point3d(-half_length, -half_width, 0));  // 左下
+    // objectPoints.push_back(Point3d(half_length, -half_width, 0));   // 右下  
+    // objectPoints.push_back(Point3d(half_length, half_width, 0));    // 右上
+    // objectPoints.push_back(Point3d(-half_length, half_width, 0));   // 左上
 
     // 使用solvePnP求解位姿
     Mat rvec, tvec;
-    bool success = solvePnP(objectPoints, pixelPoints, cameraMatrix, distCoeffs, rvec, tvec);
+    // for(int i = 0; i < 4; i++)
+    // {
+    //     cout<<"armor_points:"<<endl;
+    //     cout<< armor_points[i].x << " " << armor_points[i].y << " " << armor_points[i].z << endl;
+    //     // armor_points[i].z = -armor_points[i].z;
+    // }
+    // for(int i = 0; i < 4; i++)
+    // {
+    //     cout<<"pixel_points:"<<endl;
+    //     cout<< pixelPoints[i].x << " " << pixelPoints[i].y << endl;
+    // }
+    bool success = solvePnP(armor_points, pixelPoints, cameraMatrix, distCoeffs, 
+                           rvec, tvec, false, SOLVEPNP_IPPE);
     
     if (!success) {
         return false;
@@ -111,8 +131,10 @@ bool ShooterProcessor::armorPointsTo3D(const vector<Point2d>& pixelPoints, Point
     // tvec就是相机坐标系下的装甲板中心坐标
     // 由于相机位于原点，tvec就是装甲板中心相对于相机的三维坐标
     center3D.x = tvec.at<double>(0);
-    center3D.y = tvec.at<double>(1);
-    center3D.z = tvec.at<double>(2);
+    center3D.y = tvec.at<double>(2);
+    center3D.z = -tvec.at<double>(1) - 0.2;
+    // cout << armor_length << " " << armor_width << endl;
+    cout << center3D.x << " " << center3D.y << " " << center3D.z << endl;
 
     return true;
 }
@@ -250,19 +272,20 @@ EulerAngle ShooterProcessor::hit_static_armor(Point3d point)    //击打静态�
     //  \theta=\arctan\left[\frac{v_0^2}{gr}\left(1\pm\sqrt{1-\frac{2gz}{v_0^2}-\frac{g^2r^2}{v_0^4}}\right)\right]
 
     double x = point.x, y = point.y, z = point.z;
+    cout << "x: " << x <<"y: " << y << "z: " << z << endl;
     double yaw = 0.0, pitch = 0.0, roll = 0.0;
     yaw = atan2(y, x);
     double r = sqrt(x * x + y * y);
-    if (r < 1e-6) {  // 避免除以零（1e-6 是允许的误差范围）
-        // cerr << "Error: r = 0 (x and y are both zero)!" << endl;
-        return {0.0, 0.0, 0.0};
-    }
+    // if (r < 1e-6) {  // 避免除以零（1e-6 是允许的误差范围）
+    //     // cerr << "Error: r = 0 (x and y are both zero)!" << endl;
+    //     return {0.0, 0.0, 0.0};
+    // }
     double delta = 1 - 2 * g * z / (v0 * v0) - g * g * r * r / pow(v0, 4);
-    if (delta < 1e-6) {
-        // cerr << "Error: delta < 0 (unreachable target)! delta = " << delta << endl;
-        // cerr << "Target: r = " << r << ", z = " << z << ", v0 = " << v0 << endl;
-        return {0.0, 0.0, 0.0};
-    }
+    // if (delta < 1e-6) {
+    //     // cerr << "Error: delta < 0 (unreachable target)! delta = " << delta << endl;
+    //     // cerr << "Target: r = " << r << ", z = " << z << ", v0 = " << v0 << endl;
+    //     return {0.0, 0.0, 0.0};
+    // }
     double tmp = v0 * v0 / g / r * (1 - sqrt(delta));
     pitch = atan(tmp);
     return {yaw, pitch, roll};
