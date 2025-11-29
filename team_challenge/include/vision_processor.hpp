@@ -47,6 +47,16 @@ struct Rectangle
     int color;
 };
 
+struct Ring
+{
+    vector<Point> points;
+};
+
+struct Arrow
+{
+    vector<Point> points;
+};
+
 struct Target
 {
     vector<Point> points;
@@ -67,6 +77,8 @@ class VisionProcessor
         static void Level1(Mat img, vector<Target>& objects);
         // 第二级视觉处理：检测装甲板目标
         static void Level2(Mat img, vector<Target>& armors);
+        static void Stage1(Mat img, vector<Target>& objects);
+        static void Stage2(Mat img, vector<Target>& objects);
 
     private:
         // 从图像中提取装甲板
@@ -76,21 +88,36 @@ class VisionProcessor
         // 从图像中提取矩形目标
         static Mat get_rects(const Mat& src, vector<Rectangle>& rects);
 
+        static Mat get_ring(const Mat& src, vector<vector<Point>>& ring);
+
+        static Mat get_arrow(const Mat& src, vector<Point>& arrow);
+
         // 根据颜色类型获取二值化掩码
         static Mat get_color(const Mat& src, const int color_type);
         // 在特定颜色通道上获取轮廓
         static Mat get_contours_on_color(Mat& src, vector<vector<Point>>& contours, const int color_type);
+        // 在边缘获取轮廓
+        static Mat get_contours_on_canny(Mat& src, vector<vector<Point>>& contours);
         // 形状检测：判断轮廓是圆形、矩形还是装甲板
         static string shapes_detect(const Mat& src, vector<Point>& contour, int color_type);
         // 对点集进行排序
         static void point_sort(vector<Point>& point, int type);
-        
+        //欧几里德距离
+        static double d(Point a, Point b)   
+        {
+            return sqrt((a.x - b.x)*(a.x - b.x) + (a.y - b.y)*(a.y - b.y));
+        }
+
         // 在图像上绘制装甲板
         static void draw_armors(Mat& src, vector<Armors>& armors);
         // 在图像上绘制圆形目标
         static void draw_circles(Mat& src, vector<Circle>& circles);
         // 在图像上绘制矩形目标
         static void draw_rects(Mat& src, vector<Rectangle>& rects);
+        // 绘制圆环
+        static void draw_ring(Mat& src, vector<vector<Point>>& ring);
+        // 绘制箭头
+        static void draw_arrow(Mat& src, vector<Point>& arrow);
         
         // 判断轮廓是否为圆形
         static bool is_circle(const vector<Point>& contour);
@@ -114,6 +141,27 @@ string VisionProcessor::color_to_str(int color_type)
     if(color_type == 7) return "cyan";
     if(color_type == 8) return "blue";
     if(color_type == 9) return "purple";
+}
+
+void VisionProcessor::Stage1(Mat img, vector<Target>& objects)
+{
+    vector<vector<Point>>ring;
+    get_ring(img, ring);
+    draw_ring(img, ring);
+    for(int i = 0; i < ring.size(); i++) objects.push_back({ring[i], "Ring_red"});
+
+    imshow("Image Result", img);
+    waitKey(1);
+}
+
+void VisionProcessor::Stage2(Mat img, vector<Target>& objects)
+{
+    vector<Point> arrow;
+    get_arrow(img, arrow);
+    draw_arrow(img, arrow);
+    objects.push_back({arrow, "arrow"});
+    imshow("Image Result", img);
+    waitKey(1);
 }
 
 void VisionProcessor::Level1(Mat img, vector<Target>& objects)
@@ -171,6 +219,34 @@ bool VisionProcessor::is_armor(const Mat& src, const vector<Point>& contour)
         return true;
     }
     else return false;
+}
+
+void VisionProcessor::draw_ring(Mat& src, vector<vector<Point>>& ring)
+{
+    for(int i = 0; i < ring.size(); i++)
+    {
+        Rect boundRect = boundingRect(ring[i]);
+        for(int j = 0; j < ring[i].size(); j++)
+        {
+            
+            circle(src, ring[i][j], 1, COLOR_GREEN, 1);
+            string text = to_string(j + 1);
+            putText(src, text, {ring[i][j].x, ring[i][j].y + 5}, FONT_HERSHEY_PLAIN, 0.7, COLOR_BLUE, 1);
+            
+        }
+        string text2 = "ring_" + to_string(i + 1);
+        putText(src, text2, {boundRect.x - 5, boundRect.y - 5}, FONT_HERSHEY_PLAIN, 0.7, COLOR_BLACK, 1);
+    }
+}
+
+void VisionProcessor::draw_arrow(Mat& src, vector<Point>& arrow)
+{
+    for(int i = 0; i < arrow.size(); i++)
+    {
+        circle(src, arrow[i], 1, COLOR_GREEN, 1);
+        string text = to_string(i + 1);
+        putText(src, text, {arrow[i].x, arrow[i].y + 5}, FONT_HERSHEY_PLAIN, 0.7, COLOR_BLUE, 1);
+    }
 }
 
 void VisionProcessor::draw_circles(Mat& src, vector<Circle>& circles)
@@ -241,6 +317,96 @@ void VisionProcessor::point_sort(vector<Point>& point, int type)
         if(point[0].x > point[1].x)swap(point[0], point[1]);
         if(point[2].x < point[3].x)swap(point[2], point[3]);
     }
+}
+
+Mat VisionProcessor::get_ring(const Mat& src, vector<vector<Point>>& ring)
+{
+    Mat img = src.clone();
+    vector<vector<Point>>contours;
+    get_contours_on_canny(img, contours);
+    int obj_num = contours.size();
+    for(int i = 0; i < obj_num; i++)
+    {
+        vector<Point> points;
+        Rect boundRect = boundingRect(contours[i]);
+        points.push_back({boundRect.tl().x, boundRect.tl().y + boundRect.br().y >> 1});
+        points.push_back({boundRect.tl().x + boundRect.br().x >> 1, boundRect.br().y});
+        points.push_back({boundRect.br().x, boundRect.tl().y + boundRect.br().y >> 1});
+        points.push_back({boundRect.tl().x + boundRect.br().x >> 1, boundRect.tl().y});
+        if(i % 2 == 1)ring.push_back(points);
+    }
+    sort(ring.begin(), ring.end(), [](vector<Point>&a, vector<Point>& b){
+        return a[0].x < b[0].x;
+    });
+    return img;
+}
+
+Mat VisionProcessor::get_arrow(const Mat& src, vector<Point>& arrow)    //箭头
+{
+    Mat img = src.clone();
+    vector<vector<Point>>contours;
+    get_contours_on_color(img, contours, Type::red);
+    int obj_num = contours.size();
+    for(int i = 0; i < obj_num; i++)
+    {
+        Point2f center;
+        vector<Point>points;
+        float r;
+        minEnclosingCircle(contours[i], center, r);
+        float peri = arcLength(contours[i], true);
+        vector<Point>conPoly;
+        approxPolyDP(contours[i], conPoly, 0.02 * peri, true);
+        vector<Point>arrow_;
+        for(int j = 0; j < conPoly.size(); j++)
+        {
+            arrow_.push_back(conPoly[j]);
+        }
+        Point c;
+        c.x = center.x;
+        c.y = center.y;
+        sort(arrow_.begin(), arrow_.end(), [&c](Point a,Point b){
+            return (a.x-c.x)*(a.x-c.x)+(a.y-c.y)*(a.y-c.y) < (b.x-c.x)*(b.x-c.x)+(b.y-c.y)*(b.y-c.y);
+        });     //按点到圆心距离排序
+        Point u1, u2;
+
+        if(d(arrow_[5], arrow_[2]) + d(arrow_[5], arrow_[3]) + d(arrow_[5], arrow_[0]) + d(arrow_[5], arrow_[1])
+        > d(arrow_[4], arrow_[2]) + d(arrow_[4], arrow_[3]) + d(arrow_[4], arrow_[0]) + d(arrow_[4], arrow_[1]))
+        swap(arrow_[5], arrow_[4]); //找到箭头顶点
+
+        int tmp;
+        double minn = 10000.0;
+        for(int j = 0; j < 4; j++)  //找到距离顶点较远的两点，即为箭头两侧的点
+        {
+            if(d(arrow_[j], arrow_[5]) < minn)
+            {
+                minn = d(arrow_[j], arrow_[5]);
+                tmp = j;
+            }
+        }
+        swap(arrow_[tmp], arrow_[3]);
+        minn = 10000;
+        for(int j = 0; j < 3; j++)
+        {
+            if(d(arrow_[j], arrow_[5]) < minn)
+            {
+                minn = d(arrow_[j], arrow_[5]);
+                tmp = j;
+            }
+        }
+        swap(arrow_[tmp], arrow_[2]);
+
+        //u1, u2为基底
+        u1 = Point(arrow_[5].x - center.x, arrow_[5].y - center.y);
+        Point p = Point(arrow_[0].x + arrow_[1].x >> 1, arrow_[0].y + arrow_[1].y >> 1);
+        u2 = Point(arrow_[0].x - p.x, arrow_[0].y - p.y);
+        if(u2.cross(u1) < 0) u2 = -u2;  //保证u2在u1的左侧
+        arrow.push_back(c + u1 + u2);
+        arrow.push_back(c + u1 - u2);
+        arrow.push_back(c + -u1 - u2);
+        arrow.push_back(c + -u1 + u2);
+    }
+    
+    return img;
 }
 
 Mat VisionProcessor::get_circles(const Mat& src, vector<Circle>& circles)
@@ -416,6 +582,19 @@ Mat VisionProcessor::get_contours_on_color(Mat& src, vector<vector<Point>>& cont
     }
     drawContours(img_contour, contours, -1, COLOR_GREEN, 1);
     return img_contour;
+}
+
+Mat VisionProcessor::get_contours_on_canny(Mat& src, vector<vector<Point>>& contours)
+{
+    Mat img = src.clone();
+    Mat img_canny;
+    Mat img_red = get_color(img, Type::red);
+    Canny(img_red, img_canny, 25, 75);
+    imshow("Image Canny", img_canny);
+    vector<Vec4i> hierarchy;
+    findContours(img_canny, contours, hierarchy, RETR_LIST, CHAIN_APPROX_SIMPLE);
+    drawContours(img, contours, -1, COLOR_GREEN, 1);
+    return img;
 }
 
 Mat VisionProcessor::get_color(const Mat& src,const int color_type){
