@@ -1,0 +1,27 @@
+{
+    "RaceStage3": [
+        {
+            "average_numdetecterror": 0.558,
+            "average_orientationerror": 1.833,
+            "fps": 1,
+            "max_numdetecterror": 0.558,
+            "max_orientationerror": 1.833,
+            "run_id": "8660c9dc-e806-4bf6-b5f7-fe381ecb61ae",
+            "score": 4.0,
+            "target_type": "armor_red_1",
+            "timestamp": "2025-11-29T16:46:12Z"
+        },
+        {
+            "average_numdetecterror": 0.398,
+            "average_orientationerror": 1.726,
+            "fps": 1,
+            "max_numdetecterror": 0.398,
+            "max_orientationerror": 1.726,
+            "run_id": "d360f05d-ff2e-4378-bf48-8ffaaf62bf3b",
+            "score": 6.0,
+            "target_type": "armor_red_4",
+            "timestamp": "2025-11-29T16:46:12Z"
+        }
+    ],
+    "team_name": "TEAM21"
+}
